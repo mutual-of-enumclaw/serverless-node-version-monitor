@@ -17,10 +17,72 @@ Resources:
       Policies:
         - AWSXrayWriteOnlyAccess
       Events:
-        Timer:
-          Type: Schedule
+        Topic:
+          Type: SNS
           Properties:
-            Schedule: rate(1 minute)
+            Topic: !Ref Topic
+            Region: !Select
+              - 3
+              - !Split
+                - ':'
+                - !Ref Topic
+  Topic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${AWS::StackName}-Topic
+  ConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: !Sub ${AWS::StackName}-version-check
+      InputParameters:
+        runtime: !Ref SupportedRuntimes
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Lambda::Function
+      Source:
+        Owner: AWS
+        SourceIdentifier: LAMBDA_FUNCTION_SETTINGS_CHECK
+  RootRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - config.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+  RolePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: root
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: '*'
+            Resource: '*'
+      Roles:
+        - !Ref RootRole
+  BasicRemediationConfiguration:
+    Type: AWS::Config::RemediationConfiguration
+    Properties:
+      ConfigRuleName: !Ref ConfigRule
+      Parameters:
+        AutomationAssumeRole:
+          StaticValue:
+            Values:
+              - !Ref RootRole
+        InstanceId:
+          StaticValue:
+            Values:
+              - instanceId
+      TargetId: AWS-StartEC2Instance
+      TargetType: SSM_DOCUMENT
+      TargetVersion: '1'
 Parameters:
   StackTagName:
     Type: String
